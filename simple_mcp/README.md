@@ -113,3 +113,6 @@ uv run python -m src.terminal_mcp.server --transport http --host 0.0.0.0 --port 
 uv run python -m src.terminal_mcp.server --transport sse --host 0.0.0.0 --port 8000
 
 python client/client.py http://localhost:8000/sse/
+
+
+python client/mcp_slack_client.py http://0.0.0.0:8000/sse/

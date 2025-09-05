@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  mcp-slack-bot:
+    build: .
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-5-sonnet-20241022}
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://localhost:8002/sse}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
+
+volumes:
+  data:
+  logs:
