@@ -1,8 +1,16 @@
-# TERMINUS
 
-![TERMINUS Demo](assets/Demo.gif)
+<div align="center">
+
+# TERMINUS
+![Slack Bot](assets/BOTimage.png)
+
+</div>
+
+
 
 A comprehensive terminal-based MCP (Model Context Protocol) server that enables AI assistants to interact with your system through terminal commands, file operations, and system information retrieval. TERMINUS includes both a standalone MCP server and a Slack-integrated bot for seamless terminal access.
+
+![TERMINUS Demo](assets/Demo.gif)
 
 ## Table of Contents
 
@@ -253,7 +261,7 @@ python mcp_slack_client.py http://localhost:8002/sse --test
 - **Context Awareness**: Remembers previous commands and context
 - **Rich Formatting**: Uses Slack markdown for better readability
 
-![Slack Bot](assets/BOTimage.png)
+<!-- ![Slack Bot](assets/BOTimage.png) -->
 
 ## Docker Deployment
 
