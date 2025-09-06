@@ -1,6 +1,10 @@
 
+<div align="center">
+
 # TERMINUS
 ![Slack Bot](assets/BOTimage.png)
+
+</div>
 
 
 
