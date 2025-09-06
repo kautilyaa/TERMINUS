@@ -3,7 +3,7 @@
 ## 1. Create Slack App
 1. Go to https://api.slack.com/apps
 2. Click "Create New App" → "From scratch"
-3. Name your app (e.g., "MCP Claude Assistant")
+3. Name your app (e.g., "TERminus")
 4. Select your workspace
 
 ## 2. Configure OAuth & Permissions
