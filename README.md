@@ -1,7 +1,7 @@
 
 <div align="center">
 
-# TERMINUS
+# TERminus
 ![Slack Bot](assets/BOTimage.png)
 
 </div>
