@@ -253,7 +253,7 @@ python mcp_slack_client.py http://localhost:8002/sse --test
 - **Context Awareness**: Remembers previous commands and context
 - **Rich Formatting**: Uses Slack markdown for better readability
 
-![Slack Integration](assets/Screenshot%202025-09-05%20at%202.52.54%20PM-min.png)
+![Slack Bot](assets/BOTimage.png)
 
 ## Docker Deployment
 
