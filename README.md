@@ -4,6 +4,10 @@
 # TERminus
 ![Slack Bot](assets/BOTimage.png)
 
+[![Medium](https://img.shields.io/badge/Medium-Part%201:%20Introducing%20Terminal%20MCP%20Server-blue?style=for-the-badge&logo=medium)](https://medium.com/@arunbh.y/introducing-terminal-mcp-server-giving-your-ai-assistant-a-terminal-superpower-23d60ecf796c)
+[![Medium](https://img.shields.io/badge/Medium-Part%202:%20Building%20AI%20Powered%20Workflows-green?style=for-the-badge&logo=medium)](https://medium.com/@arunbh.y/building-ai-powered-workflows-with-terminal-mcp-and-claude-f3b932847f03)
+
+
 </div>
 
 
