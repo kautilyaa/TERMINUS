@@ -34,11 +34,13 @@ A comprehensive terminal-based MCP (Model Context Protocol) server that enables 
 ## Features
 
 ### Core MCP Server
-- **Terminal Command Execution**: Run any terminal command with proper working directory management
-- **Cross-Platform Support**: Works on macOS, Windows, and Linux with automatic command translation
-- **File Operations**: Read and write files with automatic directory creation
-- **System Information**: Get detailed system information and current working directory
-- **Multiple Transport Protocols**: Support for stdio, HTTP, and SSE transports
+- **Terminal Command Execution**: Run any shell command; each host keeps its working directory, so `cd src && make` leaves the next command in `src`
+- **SSH Hosts**: Run commands and read/write files on remote machines through your own OpenSSH setup (keys, agent, `~/.ssh/config` aliases, jump hosts), limited to an allowlist
+- **Fast Repeat SSH Calls**: Connections are multiplexed (`ControlMaster`), so only the first command on a host pays for the handshake
+- **Safe Defaults**: Commands stop at a timeout (whole process group), long output keeps its head and tail, file reads are capped, and HTTP/SSE bind to loopback unless you opt in
+- **File Operations**: Read (with a byte cap) and write or append files, creating directories as needed
+- **System Information**: OS, machine and working directory for the local machine or any SSH host
+- **Multiple Transport Protocols**: stdio (default), Streamable HTTP and SSE
 
 ### Slack Integration
 - **Real-time Chat**: Interact with your terminal through Slack messages
@@ -86,27 +88,32 @@ graph TB
 ## Quick Start
 
 ### Prerequisites
-- Python 3.12+ 
-- Anthropic API key
-- Slack app (for Slack integration)
+- Python 3.10+ and [uv](https://docs.astral.sh/uv/) (or pip)
+- OpenSSH client, for SSH hosts
+- Anthropic API key and a Slack app (only for the Slack bot)
 
 ### 1. Clone and Install
 ```bash
-git clone <your-repo-url>
-cd TERMINUS
-pip install -e .
+git clone https://github.com/kautilyaa/TERMINUS.git
+cd TERMINUS/simple_mcp
+uv sync
 ```
 
 ### 2. Start the MCP Server
 ```bash
-# Using stdio transport (default)
-python -m terminal_mcp.server
+cd simple_mcp
 
-# Using HTTP transport
-python -m terminal_mcp.server --transport http --port 8000
+# stdio (default; for Claude Desktop, Claude Code, Cursor …)
+uv run terminal-mcp
 
-# Using SSE transport
-python -m terminal_mcp.server --transport sse --port 8002
+# Streamable HTTP on http://127.0.0.1:8000/mcp
+uv run terminal-mcp --transport http --port 8000
+
+# SSE on http://127.0.0.1:8002/sse (used by the Slack bot)
+uv run terminal-mcp --transport sse --port 8002
+
+# Allow two SSH hosts (aliases from ~/.ssh/config or user@host)
+uv run terminal-mcp --ssh-hosts web1,deploy@db1
 ```
 
 ### 3. Test with Claude Desktop
@@ -115,84 +122,88 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 {
   "mcpServers": {
     "terminal": {
-      "command": "python",
-      "args": ["-m", "terminal_mcp.server"],
-      "cwd": "/path/to/TERMINUS"
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/TERMINUS/simple_mcp", "terminal-mcp", "--ssh-hosts", "web1,db1"]
     }
   }
 }
 ```
 
+Or with Claude Code: `claude mcp add terminus -- uv run --directory /path/to/TERMINUS/simple_mcp terminal-mcp`.
+
 ## Installation
 
-### Method 1: Direct Installation
+### Method 1: pip
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd TERMINUS
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install the MCP server
-cd simple_mcp
-pip install -e .
+git clone https://github.com/kautilyaa/TERMINUS.git
+cd TERMINUS/simple_mcp
+pip install -e .             # the server (needs only fastmcp)
+pip install -e ".[slack]"    # plus the Slack bot's dependencies
+terminal-mcp --help
 ```
 
 ### Method 2: Using uv (Recommended)
 ```bash
-# Install uv if you haven't already
-pip install uv
-
-# Install dependencies
-uv sync
-
-# Run the server
-uv run python -m terminal_mcp.server
+cd TERMINUS/simple_mcp
+uv sync                      # add --extra slack for the Slack bot
+uv run terminal-mcp
 ```
 
 ![UV Setup Process](assets/UV_setup.gif)
 
 ## Configuration
 
-### Environment Variables
+### Server options
 
-Create a `.env` file in the project root:
+Every option has a flag and an environment variable:
+
+| Flag | Environment | Default | Meaning |
+|---|---|---|---|
+| `--transport` | | `stdio` | `stdio`, `http` (Streamable HTTP at `/mcp`) or `sse` (at `/sse`) |
+| `--host`, `--port` | | `127.0.0.1`, `8000` | Bind address for http/sse |
+| `--allow-remote` | | off | Required to bind http/sse to a non-loopback address |
+| `--ssh-hosts` | `TERMINUS_SSH_HOSTS` | none | Comma-separated SSH destinations commands may run on; `*` allows any |
+| `--no-local` | `TERMINUS_LOCAL=0` | local on | Refuse commands on the server's own machine (SSH only) |
+| `--timeout` | `TERMINUS_TIMEOUT` | `60` | Seconds before a command is stopped (a call may ask for up to 10x) |
+| | `TERMINUS_MAX_OUTPUT` | `30000` | Characters of stdout/stderr returned (head and tail kept) |
+| | `TERMINUS_MAX_READ` | `200000` | Bytes `read_file` returns at most |
+| | `TERMINUS_SSH_CONNECT_TIMEOUT` | `10` | SSH connect timeout in seconds |
+| | `TERMINUS_SSH_CONTROL_DIR` | `~/.ssh/terminus` | Where the shared SSH connection sockets live |
+| | `TERMINUS_SSH_BIN` | `ssh` | The OpenSSH client to use |
+
+### SSH hosts
+
+TERMINUS runs `ssh` in batch mode (`BatchMode=yes`), so it never prompts: the host must be reachable with a key
+(or your SSH agent) and already be in `known_hosts`. Anything in `~/.ssh/config` applies: users, ports, identity
+files, `ProxyJump`. Check a host first with `ssh -o BatchMode=yes web1 true`.
+
+The remote side needs `bash`. Each host starts in its login directory and keeps its own working directory across
+commands. Connections are shared for 5 minutes after the last command (`ControlPersist=300`).
+
+### Security
+
+TERMINUS executes whatever the model asks for, as the user running the server. Keep it to machines and accounts
+you are willing to hand to the assistant:
+- list only the SSH hosts it needs (avoid `*`), and prefer a low-privilege remote user;
+- keep http/sse on loopback; `--allow-remote` exposes command execution to anyone who can reach the port (there is
+  no authentication);
+- `--no-local` keeps the server's own machine out of reach when it should only manage remote hosts.
+
+### Slack bot environment
+
+Create a `.env` file next to `mcp_slack_client.py`:
 
 ```bash
-# Required for Slack integration
+# Required
 ANTHROPIC_API_KEY=your_anthropic_api_key
 SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
 SLACK_APP_TOKEN=xapp-your-slack-app-token
 
 # Optional
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
-MCP_SERVER_URL=http://localhost:8002/sse
-```
-
-### Claude Desktop Configuration
-
-**macOS:**
-```bash
-nano ~/Library/Application\ Support/Claude/claude_desktop_config.json
-```
-
-**Windows:**
-```bash
-notepad %APPDATA%\Claude\claude_desktop_config.json
-```
-
-**Configuration:**
-```json
-{
-  "mcpServers": {
-    "terminal": {
-      "command": "python",
-      "args": ["-m", "terminal_mcp.server"],
-      "cwd": "/full/path/to/TERMINUS/simple_mcp"
-    }
-  }
-}
+CLAUDE_MODEL=claude-sonnet-4-5
+MCP_SERVER_URL=http://localhost:8002/sse   # used when no URL is passed on the command line
+DB_PATH=chat_history.db
+LOG_FILE=                                    # also log to this file
 ```
 
 ## Usage
@@ -212,6 +223,12 @@ Ask Claude to:
 - "Create a backup of my project folder"
 - "Check disk usage with `df -h`"
 - "Show running processes with `ps aux`"
+
+### Remote Machines (SSH)
+- "Which hosts can you reach?" (`list_hosts`)
+- "On `web1`, show the last 50 lines of `/var/log/nginx/error.log`"
+- "Check free memory and disk on `db1`"
+- "Go to `/srv/app` on `web1` and run `git status`"
 
 ### File Management
 - Read files: "Show me the contents of `config.json`"
@@ -248,21 +265,25 @@ For detailed setup instructions, see [Slack App Setup Guide](Slack_app_setup.md)
 
 ```bash
 # Start the MCP server first
-python -m terminal_mcp.server --transport sse --port 8002
+cd simple_mcp
+uv run terminal-mcp --transport sse --port 8002 --ssh-hosts web1,db1
 
 # In another terminal, start the Slack bot
-cd simple_mcp/client
-python mcp_slack_client.py http://localhost:8002/sse
+uv sync --extra slack
+uv run python client/mcp_slack_client.py http://localhost:8002/sse
 
 # Test mode (verify connections)
-python mcp_slack_client.py http://localhost:8002/sse --test
+uv run python client/mcp_slack_client.py http://localhost:8002/sse --test
 ```
 
+A Streamable HTTP server works too: pass `http://localhost:8000/mcp`.
+
 ### Slack Bot Features
-- **@mentions**: Mention the bot in any channel
+- **@mentions**: Mention the bot in any channel; it answers in a thread
 - **Direct Messages**: Send DMs to the bot
-- **Thread Replies**: Continue conversations in threads
-- **Context Awareness**: Remembers previous commands and context
+- **Thread Replies**: Keeps answering in threads it is part of (one reply per message, even when mentioned again)
+- **Context Awareness**: Each thread is one conversation, shared by everyone in it
+- **Parallel Tools**: Independent tool calls in one turn run at the same time
 - **Rich Formatting**: Uses Slack markdown for better readability
 
 <!-- ![Slack Bot](assets/BOTimage.png) -->
@@ -272,30 +293,27 @@ python mcp_slack_client.py http://localhost:8002/sse --test
 ### Using Docker Compose
 
 ```bash
-# Create .env file with your tokens
-cp .env.example .env
-# Edit .env with your actual tokens
-
-# Start the services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
+cd simple_mcp/client
+# Create .env with your tokens, then:
+docker compose up -d
+docker compose logs -f
 ```
+
+The bot reaches the server on the host at `host.docker.internal:8002`. On Docker Desktop that works with the
+server on loopback; on Linux start the server with `--host 0.0.0.0 --allow-remote` and firewall the port.
 
 ### Manual Docker Build
 
 ```bash
-# Build the image
+cd simple_mcp/client
 docker build -t terminus-slack-bot .
-
-# Run the container
 docker run -d \
   --name terminus-bot \
   -e ANTHROPIC_API_KEY=your_key \
   -e SLACK_BOT_TOKEN=your_token \
   -e SLACK_APP_TOKEN=your_app_token \
   -e MCP_SERVER_URL=http://host.docker.internal:8002/sse \
+  -v "$PWD/data:/app/data" \
   terminus-slack-bot
 ```
 
@@ -303,41 +321,40 @@ docker run -d \
 
 ### MCP Tools
 
+Every tool takes an optional `host`: an SSH host from `list_hosts`. Leave it out to act on the server's machine.
+
+#### `list_hosts`
+Where commands can run (the local machine and the allowed SSH hosts), with each host's working directory.
+
 #### `run_terminal_command`
-Execute a command in the terminal.
+Run a shell command and return its exit code, stdout and stderr.
 
 **Parameters:**
-- `command` (string): The command to execute
-- `working_directory` (string, optional): Working directory for the command
+- `command` (string): The command line, e.g. `cd src && make test`
+- `host` (string, optional): SSH host
+- `working_directory` (string, optional): Run here (it also becomes the host's working directory)
+- `timeout` (integer, optional): Seconds before the command is stopped (up to 10x the server default)
 
-**Example:**
-```python
-await run_terminal_command("ls -la", "/home/user")
-```
-
-#### `get_system_info`
-Get information about the current system.
-
-**Returns:** JSON object with system details
+A stopped command reports exit code `124`.
 
 #### `read_file`
-Read the contents of a file.
-
-**Parameters:**
-- `path` (string): Path to the file to read
+Read a text file. **Parameters:** `path`, `host` (optional), `max_bytes` (optional, capped by the server).
 
 #### `write_file`
-Write content to a file.
+Write or append text. **Parameters:** `path`, `content`, `host` (optional), `append` (optional). Returns the
+number of bytes written.
 
-**Parameters:**
-- `path` (string): Path to the file to write
-- `content` (string): Content to write
+#### `get_system_info`
+OS, machine and working directory. **Parameters:** `host` (optional).
+
+`list_hosts`, `read_file` and `get_system_info` are marked read-only (`readOnlyHint`), so clients can allow them
+without asking.
 
 ### Transport Options
 
-- **stdio**: Standard input/output (default for Claude Desktop)
-- **http**: HTTP REST API
-- **sse**: Server-Sent Events (recommended for Slack integration)
+- **stdio**: Standard input/output (default; Claude Desktop, Claude Code, Cursor)
+- **http**: Streamable HTTP at `/mcp`
+- **sse**: Server-Sent Events at `/sse` (used by the Slack bot)
 
 ## Development
 
@@ -345,34 +362,35 @@ Write content to a file.
 ```
 TERMINUS/
 ├── simple_mcp/                 # Main MCP server package
-│   ├── src/terminal_mcp/      # Source code
-│   │   ├── server.py          # MCP server implementation
+│   ├── src/terminal_mcp/
+│   │   ├── server.py          # MCP server (local + SSH)
 │   │   └── __init__.py
-│   ├── client/                # Slack client
+│   ├── client/                # Slack bot
 │   │   ├── mcp_slack_client.py
-│   │   ├── db_utils.py
+│   │   ├── db_utils.py        # chat history stats/export/cleanup
+│   │   ├── requirements.txt
 │   │   ├── docker-compose.yaml
 │   │   └── Dockerfile
-│   ├── pyproject.toml         # Package configuration
+│   ├── tests/                 # pytest suite (no network, no model calls)
+│   ├── pyproject.toml
 │   └── README.md
-├── requirements.txt           # Root dependencies
-├── Slack_app_setup.md        # Slack setup guide
-└── README.md                 # This file
+├── Slack_app_setup.md         # Slack setup guide
+└── README.md                  # This file
 ```
 
 ### Running Tests
 ```bash
-# Install test dependencies
-pip install pytest pytest-asyncio
-
-# Run tests
-pytest
+cd simple_mcp
+uv sync --extra slack
+uv run pytest
 ```
 
+The SSH tests use a stand-in `ssh` that runs the remote command line locally, so they need no SSH server.
+
 ### Adding New Tools
-1. Add tool function to `server.py` with `@mcp.tool()` decorator
-2. Update documentation
-3. Test with Claude Desktop or Slack bot
+1. Add an async function to `server.py` with `@mcp.tool()` (and `@_guard` to turn refusals into messages)
+2. Accept `host: str | None = None` and run through `run_on()` so it works locally and over SSH
+3. Add a test in `tests/test_server.py` and update this README
 
 ## Contributing
 

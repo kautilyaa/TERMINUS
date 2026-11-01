@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-import sqlite3
 import json
+import os
+import sqlite3
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+
 
 class ChatAnalytics:
     """Analytics and management for chat database"""
     
-    def __init__(self, db_path: str = "chat_history.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str | None = None):
+        self.db_path = db_path or os.environ.get("DB_PATH", "chat_history.db")
     
-    def get_usage_stats(self, days: int = 7) -> Dict:
+    def get_usage_stats(self, days: int = 7) -> dict:
         """Get usage statistics"""
         cutoff_date = datetime.now() - timedelta(days=days)
         
@@ -48,7 +49,7 @@ class ChatAnalytics:
                 "tool_usage": [{"tool": t[0], "count": t[1]} for t in tool_usage]
             }
     
-    def export_session(self, session_id: str) -> Dict:
+    def export_session(self, session_id: str) -> dict:
         """Export a complete session"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()

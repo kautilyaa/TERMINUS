@@ -1,179 +1,47 @@
-# Terminal MCP Server
+# terminal-mcp (TERMINUS)
 
-A Model Context Protocol (MCP) server that enables AI assistants to interact with your terminal through command execution, file operations, and system information retrieval. This server provides cross-platform support for macOS, Windows, and Linux systems.
-
-## Features
-
-- **Terminal Command Execution**: Run any terminal command with proper working directory management
-- **File Operations**: Read and write files with automatic directory creation
-- **System Information**: Get detailed system information and current working directory
-- **Cross-Platform Support**: Works on macOS, Windows, and Linux with automatic command translation
-- **Multiple Transport Protocols**: Support for stdio, HTTP, and SSE transports
-
-## Installation
-
-### Prerequisites
-- Python 3.12+
-- MCP client (Claude Desktop, or custom client)
-
-### Install Dependencies
+An MCP server that lets an AI assistant run terminal commands and read or write files, on this machine or on SSH
+hosts you allow. Full guide: [TERMINUS README](../README.md).
 
 ```bash
-# Install MCP dependencies
-pip install mcp fastmcp
-
-# Install the MCP server in development mode
-pip install -e .
-```
-
-### Using uv (Recommended)
-
-```bash
-# Install uv if you haven't already
-pip install uv
-
-# Install dependencies
 uv sync
-
-# Run the server
-uv run python -m terminal_mcp.server
+uv run terminal-mcp                                  # stdio, for Claude Desktop / Claude Code / Cursor
+uv run terminal-mcp --ssh-hosts web1,deploy@db1      # also allow two SSH hosts
+uv run terminal-mcp --transport sse --port 8002      # for the Slack bot (client/)
+uv run terminal-mcp --transport http --port 8000     # Streamable HTTP at /mcp
 ```
 
-## Usage
+Claude Code: `claude mcp add terminus -- uv run --directory /path/to/TERMINUS/simple_mcp terminal-mcp`
 
-### Transport Options
+## Tools
 
-#### stdio (Default for Claude Desktop)
-```bash
-python -m terminal_mcp.server
-```
+Each tool takes an optional `host` (an SSH host from `list_hosts`); without it the tool acts locally.
 
-#### HTTP Transport
-```bash
-python -m terminal_mcp.server --transport http --host 0.0.0.0 --port 8000
-```
+| Tool | What it does |
+|---|---|
+| `list_hosts` | Local machine and allowed SSH hosts, with their working directories |
+| `run_terminal_command` | Run a command (`command`, `working_directory`, `timeout`); returns exit code, stdout, stderr |
+| `read_file` | Read a file (`path`, `max_bytes`) |
+| `write_file` | Write or append a file (`path`, `content`, `append`) |
+| `get_system_info` | OS, machine and working directory |
 
-#### SSE Transport
-```bash
-python -m terminal_mcp.server --transport sse --host 0.0.0.0 --port 8002
-```
+## Behaviour
 
-### Claude Desktop Configuration
+- **SSH** uses your OpenSSH client in batch mode (keys, agent, `~/.ssh/config`, `ProxyJump`); hosts must be listed
+  in `--ssh-hosts` / `TERMINUS_SSH_HOSTS` (`*` = any) and already be in `known_hosts`. Connections are shared, so
+  repeat commands skip the handshake. The remote side needs `bash`.
+- **Working directory** is kept per host: `cd src && make` leaves the next command in `src`.
+- **Limits:** commands stop after `TERMINUS_TIMEOUT` seconds (default 60; exit code 124), output is capped at
+  `TERMINUS_MAX_OUTPUT` characters (head and tail kept), reads at `TERMINUS_MAX_READ` bytes.
+- **Network:** http/sse bind to `127.0.0.1`; binding elsewhere needs `--allow-remote` (there is no authentication).
+  `--no-local` (or `TERMINUS_LOCAL=0`) refuses commands on the server's own machine.
+- **Windows:** local commands run in `cmd.exe`; pass `working_directory` to change directory.
 
-Add this to your Claude Desktop configuration file:
-
-**macOS:**
-```bash
-nano ~/Library/Application\ Support/Claude/claude_desktop_config.json
-```
-
-**Windows:**
-```bash
-notepad %APPDATA%\Claude\claude_desktop_config.json
-```
-
-**Configuration:**
-```json
-{
-  "mcpServers": {
-    "terminal": {
-      "command": "python",
-      "args": ["-m", "terminal_mcp.server"],
-      "cwd": "/full/path/to/terminal-mcp"
-    }
-  }
-}
-```
-
-## Available Tools
-
-### `run_terminal_command`
-Execute any terminal command with optional working directory specification.
-
-**Parameters:**
-- `command` (string): The command to execute
-- `working_directory` (string, optional): Working directory for the command
-
-### `get_system_info`
-Get comprehensive information about the current system.
-
-**Returns:** JSON object with system details including OS, architecture, Python version, and current directory.
-
-### `read_file`
-Read the contents of a file.
-
-**Parameters:**
-- `path` (string): Path to the file to read
-
-### `write_file`
-Write content to a file with automatic directory creation.
-
-**Parameters:**
-- `path` (string): Path to the file to write
-- `content` (string): Content to write
-
-## Usage Examples
-
-Ask Claude to:
-
-- "Run `ls -la` to show directory contents"
-- "Show me the current directory"
-- "Create a new file called `test.txt` with 'Hello World'"
-- "Read the contents of `test.txt`"
-- "Get system information"
-- "Change to the `/tmp` directory and list files"
-- "Create a backup of my project folder"
-
-## Cross-Platform Support
-
-The server automatically handles platform differences:
-
-- **Windows**: Translates common Unix commands (`ls` → `dir`, `pwd` → `cd`, etc.)
-- **macOS/Linux**: Uses standard Unix commands
-- **Working Directory**: Maintains state across commands
-- **Path Handling**: Supports both relative and absolute paths
-
-## Development
-
-### Project Structure
-```
-simple_mcp/
-├── src/terminal_mcp/          # Source code
-│   ├── server.py              # MCP server implementation
-│   └── __init__.py
-├── client/                    # Slack client (optional)
-│   ├── mcp_slack_client.py
-│   └── requirements.txt
-├── pyproject.toml             # Package configuration
-└── README.md                  # This file
-```
-
-### Testing the Server
+## Tests
 
 ```bash
-# Test stdio transport
-python -m terminal_mcp.server
-
-# Test HTTP transport
-python -m terminal_mcp.server --transport http --port 8000
-
-# Test SSE transport
-python -m terminal_mcp.server --transport sse --port 8002
+uv sync --extra slack
+uv run pytest
 ```
 
-### Integration with Slack Bot
-
-To use with the Slack bot client:
-
-```bash
-# Start the MCP server with SSE transport
-python -m terminal_mcp.server --transport sse --port 8002
-
-# In another terminal, start the Slack client
-cd client
-python mcp_slack_client.py http://localhost:8002/sse
-```
-
-## License
-
-This project is part of TERMINUS and is licensed under the MIT License.
+No network, no SSH server and no model calls are needed: SSH is exercised through a stand-in `ssh`.

@@ -1,24 +1,15 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+COPY mcp_slack_client.py db_utils.py ./
 
-# Create volume for database
 VOLUME ["/app/data"]
+ENV DB_PATH=/app/data/chat_history.db \
+    PYTHONUNBUFFERED=1
 
-# Set environment for database location
-ENV DB_PATH=/app/data/chat_history.db
-
-# Run the bot
-CMD ["python", "mcp_slack_client.py", "${MCP_SERVER_URL}"]
+# The client reads MCP_SERVER_URL when no URL is passed (an exec-form CMD can't expand variables).
+CMD ["python", "mcp_slack_client.py"]
